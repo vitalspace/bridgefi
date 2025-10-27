@@ -5,7 +5,7 @@ authors = []
 telemetry = true
 cache_dir = '.\.cache'
 requirements = []
-[contracts.lending-system-v10]
+[contracts.lending-system-v14]
 path = 'contracts/lending-system.clar'
 clarity_version = 3
 epoch = 'latest'

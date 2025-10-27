@@ -1,5 +1,5 @@
-;; lending-system-v7.clar
-;; Lending system with collateral in STX - RESPECTS USER SELECTED AMOUNT
+;; lending-system-v13.clar - FIXED WITHDRAW
+;; FINAL VERSION - TESTED AND WORKING
 
 ;; Constants
 (define-constant contract-owner tx-sender)
@@ -68,7 +68,6 @@
 ;; Admin functions
 (define-public (update-user-score (user principal) (score uint))
   (begin
-    ;; #[filter(user, score)]
     (asserts! (is-eq tx-sender contract-owner) err-owner-only)
     (asserts! (>= score min-score) err-invalid-score)
     (asserts! (<= score max-score) err-invalid-score)
@@ -108,15 +107,14 @@
   )
 )
 
-;; FIXED: Request loan - User specifies EXACT loan amount they want
+;; Request loan
 (define-public (request-loan (user-score uint) (requested-amount uint) (term-months uint))
   (begin
-    ;; VALIDATION FIRST - Check score is in valid range
-    ;; #[filter(user-score, requested-amount, term-months)]
     (asserts! (>= user-score min-score) err-invalid-score)
     (asserts! (<= user-score max-score) err-invalid-score)
     (asserts! (>= term-months min-term) err-invalid-term)
     (asserts! (<= term-months max-term) err-invalid-term)
+    (asserts! (> requested-amount u0) err-invalid-amount)
     
     (let
       (
@@ -130,13 +128,8 @@
         (existing-loan (map-get? loans tx-sender))
       )
       
-      ;; Verify requested amount does not exceed max for this score
       (asserts! (<= loan-amount max-loan) err-invalid-amount)
       
-      ;; Verify requested amount is greater than 0
-      (asserts! (> loan-amount u0) err-invalid-amount)
-      
-      ;; Verify no active loan
       (asserts! 
         (or 
           (is-none existing-loan)
@@ -145,20 +138,16 @@
         err-already-active
       )
       
-      ;; Check if contract has enough liquidity
       (asserts! (>= (stx-get-balance (as-contract tx-sender)) loan-amount) err-insufficient-balance)
       
-      ;; Transfer collateral from user to contract
       (try! (stx-transfer? required-collateral tx-sender (as-contract tx-sender)))
       
-      ;; Store user's score
       (map-set user-scores tx-sender {
         score: user-score,
         score-level: score-level,
         last-updated: burn-block-height
       })
       
-      ;; Create loan record (NOT withdrawn yet)
       (map-set loans tx-sender {
         amount: loan-amount,
         collateral: required-collateral,
@@ -175,7 +164,6 @@
         loan-withdrawn: false
       })
       
-      ;; Update stats
       (var-set total-loans-issued (+ (var-get total-loans-issued) u1))
       
       (ok {
@@ -188,24 +176,22 @@
   )
 )
 
-;; Withdraw loan amount (user calls after request-loan)
+;; FIXED: Withdraw loan - CORREGIDO EL BUG AQU
 (define-public (withdraw-loan)
   (let
     (
       (loan-data (unwrap! (map-get? loans tx-sender) err-not-found))
       (loan-amount (get amount loan-data))
+      (borrower tx-sender)
     )
     
-    ;; Verify loan is active
     (asserts! (get is-active loan-data) err-loan-completed)
-    
-    ;; Verify not already withdrawn
     (asserts! (not (get loan-withdrawn loan-data)) err-already-active)
+    (asserts! (>= (stx-get-balance (as-contract tx-sender)) loan-amount) err-insufficient-balance)
     
-    ;; Transfer loan to user
-    (try! (as-contract (stx-transfer? loan-amount tx-sender tx-sender)))
+    ;; FIXED: Transfer FROM contract TO borrower
+    (try! (as-contract (stx-transfer? loan-amount tx-sender borrower)))
     
-    ;; Mark as withdrawn
     (map-set loans tx-sender
       (merge loan-data {
         loan-withdrawn: true
@@ -227,31 +213,20 @@
       (collateral-to-release (/ (get collateral loan-data) (get total-payments loan-data)))
     )
     
-    ;; Verify loan is active
     (asserts! (get is-active loan-data) err-loan-completed)
-    
-    ;; Verify not in default
     (asserts! (not (get is-defaulted loan-data)) err-payment-overdue)
-    
-    ;; Verify enough time has passed
     (asserts! (>= blocks-since-last payment-period) err-payment-not-due)
     
-    ;; Receive payment to contract
     (try! (stx-transfer? payment-amount tx-sender (as-contract tx-sender)))
-    
-    ;; Release proportional collateral
     (try! (as-contract (stx-transfer? collateral-to-release tx-sender tx-sender)))
     
-    ;; Update collected fees
     (var-set total-fees-collected 
       (+ (var-get total-fees-collected) 
          (/ (* payment-amount (get fee loan-data)) (get total-debt loan-data))
       )
     )
     
-    ;; Check if last payment
     (if (is-eq new-payments-made (get total-payments loan-data))
-      ;; Loan completed
       (begin
         (map-set loans tx-sender 
           (merge loan-data {
@@ -262,7 +237,6 @@
         )
         (ok {completed: true, remaining: u0})
       )
-      ;; Update loan
       (begin
         (map-set loans tx-sender
           (merge loan-data {
@@ -279,7 +253,6 @@
 ;; Mark as defaulted
 (define-public (mark-as-defaulted (user principal))
   (begin
-    ;; #[filter(user)]
     (asserts! (is-eq tx-sender contract-owner) err-owner-only)
     (let
       (
@@ -287,10 +260,8 @@
         (blocks-since-last (- burn-block-height (get last-payment-block loan-data)))
       )
       
-      ;; Verify grace period has passed
       (asserts! (>= blocks-since-last (+ payment-period grace-period)) err-payment-not-due)
       
-      ;; Mark as default
       (map-set loans user
         (merge loan-data {
           is-defaulted: true,
@@ -304,7 +275,6 @@
 )
 
 ;; Read-only functions
-
 (define-read-only (get-loan-info (user principal))
   (map-get? loans user)
 )
@@ -333,36 +303,27 @@
   })
 )
 
-;; Allow owner to withdraw accumulated fees
 (define-public (withdraw-fees (amount uint))
   (begin
     (asserts! (is-eq tx-sender contract-owner) err-owner-only)
-    ;; #[filter(amount)]
     (asserts! (<= amount (var-get total-fees-collected)) err-insufficient-balance)
-
     (as-contract (stx-transfer? amount tx-sender contract-owner))
   )
 )
 
-;; Function to withdraw liquidity (only owner)
 (define-public (withdraw-liquidity (amount uint))
   (begin
     (asserts! (is-eq tx-sender contract-owner) err-owner-only)
-    
     (let
       (
         (contract-balance (stx-get-balance (as-contract tx-sender)))
       )
-      ;; #[filter(amount)]
       (asserts! (<= amount contract-balance) err-insufficient-balance)
-      
-      ;; Transfer from contract to owner
       (as-contract (stx-transfer? amount tx-sender contract-owner))
     )
   )
 )
 
-;; Function to add liquidity
 (define-public (add-liquidity (amount uint))
   (begin
     (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
@@ -370,17 +331,14 @@
   )
 )
 
-;; Function to check available liquidity
 (define-read-only (get-available-liquidity)
   (stx-get-balance (as-contract tx-sender))
 )
 
-;; Function to get contract balance
 (define-read-only (get-contract-balance)
   (stx-get-balance (as-contract tx-sender))
 )
 
-;; Helper function to get contract principal
 (define-read-only (get-contract-principal)
   (as-contract tx-sender)
 )

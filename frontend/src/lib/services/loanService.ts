@@ -212,32 +212,49 @@ export const updateUserScore = async (userAddress: string, score: number): Promi
 
 // FIXED: requestLoan NOW accepts requestedAmount parameter
 export const requestLoan = async (
-	userScore: number,
-	requestedAmount: number,
-	termMonths: number
+    userScore: number,
+    requestedAmountMicroSTX: number, // DEBE SER microSTX (ej: 10000000)
+    termMonths: number
 ): Promise<string> => {
-	return new Promise((resolve, reject) => {
-		openContractCall({
-			network: STACKS_TESTNET,
-			anchorMode: AnchorMode.Any,
-			contractAddress: CONTRACT_ADDRESS,
-			contractName: CONTRACT_NAME,
-			functionName: 'request-loan',
-			functionArgs: [
-				uintCV(userScore),
-				uintCV(requestedAmount), // ← NUEVO PARÁMETRO
-				uintCV(termMonths)
-			],
-			postConditionMode: PostConditionMode.Allow,
-			onFinish: (data) => {
-				console.log('Loan request transaction finished:', data);
-				resolve(data.txId);
-			},
-			onCancel: () => {
-				reject(new Error('Loan request transaction cancelled'));
-			}
-		});
-	});
+    return new Promise((resolve, reject) => {
+        console.log('Sending request-loan with:', {
+            userScore,
+            requestedAmountMicroSTX,
+            termMonths
+        });
+        
+        // Validación en cliente
+        if (requestedAmountMicroSTX < 10000000) {
+            reject(new Error('Minimum loan is 10 STX (10000000 microSTX)'));
+            return;
+        }
+        
+        if (requestedAmountMicroSTX > 50000000) {
+            reject(new Error('Maximum loan is 50 STX (50000000 microSTX)'));
+            return;
+        }
+        
+        openContractCall({
+            network: STACKS_TESTNET,
+            anchorMode: AnchorMode.Any,
+            contractAddress: CONTRACT_ADDRESS,
+            contractName: CONTRACT_NAME,
+            functionName: 'request-loan',
+            functionArgs: [
+                uintCV(userScore),
+                uintCV(requestedAmountMicroSTX),
+                uintCV(termMonths)
+            ],
+            postConditionMode: PostConditionMode.Allow,
+            onFinish: (data) => {
+                console.log('Loan request transaction finished:', data);
+                resolve(data.txId);
+            },
+            onCancel: () => {
+                reject(new Error('Loan request transaction cancelled'));
+            }
+        });
+    });
 };
 
 // Withdraw loan (user calls after request-loan)

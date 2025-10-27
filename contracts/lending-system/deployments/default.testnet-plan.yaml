@@ -9,9 +9,9 @@ plan:
     - id: 0
       transactions:
         - contract-publish:
-            contract-name: lending-system-v10
+            contract-name: lending-system-v14
             expected-sender: ST23JSMGR5933QJ329PKPNNQJV6QG8Z9D33QBYDNX
-            cost: 110830
+            cost: 98340
             path: "contracts\\lending-system.clar"
             anchor-block-only: true
             clarity-version: 3
