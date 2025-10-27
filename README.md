@@ -31,7 +31,7 @@ Borrow STX tokens secured by collateral with fair 10% annual interest rates. Loa
 - **Frontend**: SvelteKit with TypeScript
 - **Backend**: Elysia.js with Bun runtime
 - **Blockchain**: Stacks with Clarity smart contracts
-- **Database**: (Add your database here if applicable)
+- **Database**: MongoDB
 
 ## Project Structure
 
