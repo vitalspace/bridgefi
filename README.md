@@ -1,5 +1,8 @@
 # BridgeFi
 
+[![BridgeFi Demo](https://img.youtube.com/vi/f6z_3KWVbbw/0.jpg)](https://youtu.be/f6z_3KWVbbw)
+
+
 BridgeFi is a comprehensive decentralized finance platform that combines cross-chain swaps, on-chain credit scoring, and decentralized lending into a single, user-friendly ecosystem. Built on the Stacks blockchain with Clarity smart contracts, BridgeFi empowers users to seamlessly exchange assets, build credit history, and access fair lending opportunities.
 
 ## What is BridgeFi?
